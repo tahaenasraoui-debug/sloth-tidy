@@ -41,6 +41,16 @@ Sloths survive by conserving energy. You shouldn't spend yours manually renaming
 
 ---
 
+## 📸 Terminal Demo
+
+<p align="center">
+  <img src="./assets/image.png" alt="SlothTidy CLI Demo — Scan and Energy Saved Report Card" width="100%">
+</p>
+
+> *Above: Running `sloth-tidy scan ~/Downloads` to classify incoming PDFs, archives, and screenshots via local `qwen2.5:1.5b`, followed by `sloth-tidy report` to inspect the Sloth Energy Saved Report Card.*
+
+---
+
 ## ✨ Key Features
 
 * **Debounced Non-Blocking Daemon (`watchdog`)**: Automatically ignores browser partial writes (`.crdownload`, `.part`, `.tmp`, `.aria2`) and waits until file byte sizes stabilize and POSIX file locks (`fcntl.flock`) release before inspecting content.
@@ -146,17 +156,6 @@ Scan any directory and view the proposed categorization table without moving a s
 sloth-tidy scan ~/Downloads --dry-run
 ```
 
-```text
-                       SlothTidy Scan Summary (DRY-RUN)
-╭──────────────────────────┬───────────────────────────┬────────────────────────────────────────┬───────┬──────────────────────────────────────────────╮
-│ Original File            │ Category / Subfolder      │ New Filename                           │ Conf. │ Summary                                      │
-├──────────────────────────┼───────────────────────────┼────────────────────────────────────────┼───────┼──────────────────────────────────────────────┤
-│ Facture_Octobre_IAM.pdf  │ Finance/Invoices          │ 2026-10-19-iam-fiber-invoice.pdf       │   95% │ Monthly fiber internet invoice from Maroc... │
-│ td3_analyse.pdf          │ Academic/Mathematics      │ 2026-10-19-td3-real-analysis.pdf       │   92% │ Problem set 3 on series and integration.     │
-│ deploy_worker.sh         │ Development/Scripts       │ 2026-10-19-deploy-worker-script.sh     │   89% │ Bash deployment script for worker service.   │
-╰──────────────────────────┴───────────────────────────┴────────────────────────────────────────┴───────┴──────────────────────────────────────────────╯
-```
-
 ### 2. Start the Background Daemon
 Monitor `~/Downloads` and `~/Desktop` continuously in the background:
 
@@ -190,26 +189,6 @@ See how much manual toil and cloud API spend the sloth has saved you:
 
 ```bash
 sloth-tidy report
-```
-
-```text
-╭────────────────────── 🦥 Sloth Energy Saved Report Card ──────────────────────╮
-│                                                                               │
-│  While you rested, SlothTidy sorted 42 files (118.4 MB) and saved you         │
-│  17.5 minutes of manual toil.                                                 │
-│                                                                               │
-│  Category Breakdown:                                                          │
-│    • Academic       : 16 file(s)                                              │
-│    • Development    : 12 file(s)                                              │
-│    • Finance        : 8 file(s)                                               │
-│    • Media          : 6 file(s)                                               │
-│                                                                               │
-│  Sloth Conservation Metrics:                                                  │
-│    • Mental Decisions Avoided : 126                                           │
-│    • Cecropia Leaves Munched  : 75 🌿                                         │
-│    • Cloud API Dollars Spent  : $0.00 (Est. $0.17 saved)                      │
-│    • Sensitive Bytes Leaked   : 0 B (100% Local Inference)                    │
-╰───────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ---
@@ -268,6 +247,8 @@ sloth-tidy/
 ├── pyproject.toml           # Build configuration and pinned dependencies
 ├── README.md                # Project documentation
 ├── DEV_POST.md              # Hacktoberfest 2026 "Slow and Steady" article & benchmarks
+├── assets/
+│   └── image.png            # Terminal UI preview image (scan + report card)
 ├── sloth_tidy/
 │   ├── __init__.py          # Package version metadata
 │   ├── config.py            # TOML configuration loader & Pydantic settings validation
