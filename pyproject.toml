@@ -40,3 +40,6 @@ sloth-tidy = "sloth_tidy.cli:app"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.hatch.build.targets.wheel]
+packages = ["sloth_tidy"]
