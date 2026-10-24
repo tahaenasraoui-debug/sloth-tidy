@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "sloth-tidy"
 version = "0.3.0"
 description = "Zero-friction, privacy-first local file organization daemon powered by small open-weight LLMs."
-readme = "DEV_POST.md"
+readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [
