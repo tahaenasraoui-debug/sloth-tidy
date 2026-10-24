@@ -145,7 +145,7 @@ def scan(
     candidates = [p for p in iterator if not is_ignored_file(p, config)]
 
     if not candidates:
-        console.print(f"[yellow]🦥 Nothing to tidy in {target_dir}. Time for a nap![/yellow]")
+        console.print(f"[yellow]Nothing to tidy in {target_dir}. Time for a nap![/yellow]")
         return
 
     results: list[HistoryEntry] = []
@@ -194,12 +194,12 @@ def history(
     """Show recently organized files and the sloth's lazy audit log."""
     entries = read_history(HISTORY_FILE)
     if not entries:
-        console.print("[yellow]🦥 The audit log is empty. No files have been moved yet.[/yellow]")
+        console.print("[yellow] The audit log is empty. No files have been moved yet.[/yellow]")
         return
 
     recent = list(reversed(entries))[:limit]
     table = Table(
-        title=f"🦥 SlothTidy Audit Log (Last {len(recent)} Operations)",
+        title=f" SlothTidy Audit Log (Last {len(recent)} Operations)",
         box=box.SIMPLE_HEAVY,
     )
     table.add_column("ID", style="dim")
@@ -235,7 +235,7 @@ def undo(
     restored = organizer.undo(count=count)
 
     if not restored:
-        console.print("[yellow]🦥 No active file moves found to undo.[/yellow]")
+        console.print("[yellow] No active file moves found to undo.[/yellow]")
         return
 
     for item in restored:
@@ -275,7 +275,6 @@ def report() -> None:
         f"[bold]Category Breakdown:[/bold]\n{breakdown_str}\n\n"
         f"[bold]Sloth Conservation Metrics:[/bold]\n"
         f"  • Mental Decisions Avoided : [bold]{total_files * 3}[/bold]\n"
-        f"  • Cecropia Leaves Munched  : [bold]{leaves_munched} 🌿[/bold]\n"
         f"  • Cloud API Dollars Spent  : [bold green]$0.00[/bold green] (Est. ${cloud_cost_saved:.2f} saved)\n"
         f"  • Sensitive Bytes Leaked   : [bold green]0 B (100% Local Inference)[/bold green]"
     )
@@ -283,7 +282,7 @@ def report() -> None:
     console.print(
         Panel(
             card,
-            title="🦥 Sloth Energy Saved Report Card",
+            title="Sloth Energy Saved Report Card",
             border_style="bright_green",
             padding=(1, 2),
         )
