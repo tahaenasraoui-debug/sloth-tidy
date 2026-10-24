@@ -134,7 +134,7 @@ ollama pull moondream:latest
 Clone the repository and install inside a Python 3.11+ virtual environment:
 
 ```bash
-git clone [https://github.com/tahary/sloth-tidy.git](https://github.com/tahary/sloth-tidy.git)
+git clone https://github.com/tahaenasraoui-debug/sloth-tidy.git
 cd sloth-tidy
 python3 -m venv .venv
 source .venv/bin/activate
