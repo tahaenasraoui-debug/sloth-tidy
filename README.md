@@ -14,7 +14,7 @@
 &#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;`'-.._____.-'&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;
 </pre>
 
-# 🦥 SlothTidy
+# SlothTidy
 
 **Zero-friction, privacy-first local AI file organization daemon.**  
 *Built for the Hacktoberfest 2026 "Slow and Steady" Challenge.*
@@ -30,7 +30,7 @@
 
 ---
 
-## 🌿 The Sloth Ethos
+## The Sloth Ethos
 
 Sloths survive by conserving energy. You shouldn't spend yours manually renaming `scan_0042 (1).pdf` or dragging screenshots out of `~/Downloads`.
 
@@ -42,7 +42,7 @@ Sloths survive by conserving energy. You shouldn't spend yours manually renaming
 
 ---
 
-## 📸 Terminal Demo
+## Terminal Demo
 
 <p align="center">
   <img src="./assets/image.png" alt="SlothTidy CLI Demo — Scan and Energy Saved Report Card" width="100%">
@@ -52,7 +52,7 @@ Sloths survive by conserving energy. You shouldn't spend yours manually renaming
 
 ---
 
-## ✨ Key Features
+## Key Features
 
 * **Debounced Non-Blocking Daemon (`watchdog`)**: Automatically ignores browser partial writes (`.crdownload`, `.part`, `.tmp`, `.aria2`) and waits until file byte sizes stabilize and POSIX file locks (`fcntl.flock`) release before inspecting content.
 * **Grammar-Enforced Structured Output (`Pydantic v2`)**: Passes strict JSON schemas directly into Ollama's `/api/chat` `format` constraint, guaranteeing valid categories, sanitized relative subfolders, and normalized `YYYY-MM-DD` kebab-case filenames.
@@ -69,7 +69,7 @@ Sloths survive by conserving energy. You shouldn't spend yours manually renaming
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```mermaid
 flowchart TD
@@ -98,7 +98,7 @@ flowchart TD
 
 ---
 
-## 🚀 Quickstart
+## Quickstart
 
 ### 1. Prerequisites
 
@@ -148,7 +148,7 @@ pip install -e ".[dev,llama-cpp]"
 
 ---
 
-## 🖥️ CLI Usage
+## CLI Usage
 
 ### 1. Preview Organization with a Dry-Run Scan
 Scan any directory and view the proposed categorization table without moving a single file:
@@ -194,7 +194,7 @@ sloth-tidy report
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 On first launch, SlothTidy generates `~/.config/sloth-tidy/config.toml` with sensible defaults:
 
@@ -231,7 +231,7 @@ ignored_prefixes = [".", "~$", "__"]
 
 ---
 
-## 🧪 Running Tests
+## Running Tests
 
 The test suite covers Pydantic JSON schema sanitization (including path-traversal prevention), compound extension collision resolution (`.tar.gz`), `--dry-run` isolation, and multi-step `undo` rollbacks:
 
@@ -241,7 +241,7 @@ pytest -v
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```text
 sloth-tidy/
@@ -264,7 +264,7 @@ sloth-tidy/
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions, issues, and feature requests are welcome for **Hacktoberfest 2026**!
 1. Fork the repository.
@@ -274,6 +274,6 @@ Contributions, issues, and feature requests are welcome for **Hacktoberfest 2026
 
 ---
 
-## 📄 License
+## License
 
 Distributed under the **MIT License**. See `LICENSE` for more information.
