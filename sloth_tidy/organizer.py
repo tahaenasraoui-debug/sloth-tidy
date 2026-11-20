@@ -1,10 +1,8 @@
-from __future__ import annotations
-
-import shutil
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+import shutil
+from typing import List, Optional, Tuple
+import uuid
 
 from pydantic import BaseModel, Field
 
@@ -138,8 +136,10 @@ class SlothOrganizer:
         self.llm = llm_client or LocalLLMClient(config)
         self.history_path = history_path
 
-    def compute_destination(self, classification: FileClassification) -> Path:
-        """Compute the collision-safe destination path for a classified file."""
+    def compute_destination_parts(
+        self, classification: FileClassification
+    ) -> Tuple[str, str, Path]:
+        """Compute category, subfolder, and collision-safe destination path."""
         if classification.confidence < self.config.confidence_threshold:
             category_dir = CategoryEnum.MISC.value
             subfolder_dir = "Low_Confidence_Review"
@@ -153,33 +153,39 @@ class SlothOrganizer:
             / subfolder_dir
             / classification.suggested_filename
         )
-        return resolve_collision(raw_dest)
+        return category_dir, subfolder_dir, resolve_collision(raw_dest)
+
+    def compute_destination(self, classification: FileClassification) -> Path:
+        """Backward-compatible helper returning only the resolved path."""
+        _, _, destination = self.compute_destination_parts(classification)
+        return destination
 
     def organize_file(
         self, file_path: Path, dry_run: bool = False
     ) -> Optional[HistoryEntry]:
         """Extract context, classify via local LLM, and safely move the file."""
+        is_dry_run = bool(dry_run)
         file_path = file_path.expanduser().resolve()
         if is_ignored_file(file_path, self.config):
             return None
 
         context = extract_file_context(file_path, self.config)
         classification = self.llm.classify(context)
-        destination = self.compute_destination(classification)
+        category, subfolder, destination = self.compute_destination_parts(classification)
 
         entry = HistoryEntry(
             original_path=str(file_path),
             destination_path=str(destination),
-            category=classification.category.value,
-            subfolder=classification.subfolder,
+            category=category,
+            subfolder=subfolder,
             confidence=classification.confidence,
             summary=classification.summary,
             size_bytes=context.size_bytes,
-            dry_run=dry_run,
+            dry_run=is_dry_run,
             undone=False,
         )
 
-        if not dry_run:
+        if not is_dry_run:
             destination.parent.mkdir(parents=True, exist_ok=True)
             # Re-verify collision right before moving in case of concurrent events
             final_dest = resolve_collision(destination)
