@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
-from typing import List, Optional
 
 import tomli_w
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 CONFIG_DIR = Path.home() / ".config" / "sloth-tidy"
 CONFIG_FILE = CONFIG_DIR / "config.toml"
@@ -15,7 +14,9 @@ HISTORY_FILE = CONFIG_DIR / "history.jsonl"
 class SlothConfig(BaseModel):
     """Configuration schema for SlothTidy daemon and CLI."""
 
-    watch_dirs: List[Path] = Field(
+    model_config = ConfigDict(protected_namespaces=())
+
+    watch_dirs: list[Path] = Field(
         default_factory=lambda: [
             Path.home() / "Downloads",
             Path.home() / "Desktop",
@@ -27,13 +28,13 @@ class SlothConfig(BaseModel):
     ollama_endpoint: str = "http://localhost:11434"
     model_name: str = "qwen2.5:1.5b"
     vision_model_name: str = "moondream:latest"
-    gguf_fallback_path: Optional[Path] = None
+    gguf_fallback_path: Path | None = None
     confidence_threshold: float = Field(default=0.55, ge=0.0, le=1.0)
     debounce_seconds: float = Field(default=2.5, ge=0.5, le=60.0)
     max_text_bytes: int = Field(default=2048, ge=256, le=32768)
     enable_ocr: bool = True
     enable_vision_model: bool = False
-    ignored_extensions: List[str] = Field(
+    ignored_extensions: list[str] = Field(
         default_factory=lambda: [
             ".crdownload",
             ".part",
@@ -46,7 +47,7 @@ class SlothConfig(BaseModel):
             ".ut!",
         ]
     )
-    ignored_prefixes: List[str] = Field(
+    ignored_prefixes: list[str] = Field(
         default_factory=lambda: [".", "~$", "__"]
     )
 
@@ -62,7 +63,7 @@ class SlothConfig(BaseModel):
 
     @field_validator("gguf_fallback_path", mode="before")
     @classmethod
-    def expand_gguf_path(cls, v: Optional[str | Path]) -> Optional[Path]:
+    def expand_gguf_path(cls, v: str | Path | None) -> Path | None:
         if not v:
             return None
         return Path(v).expanduser().resolve()
@@ -97,7 +98,8 @@ def ensure_config_dir() -> None:
 
 def load_config(config_path: Path = CONFIG_FILE) -> SlothConfig:
     """Load configuration from TOML file, creating defaults if missing."""
-    ensure_config_dir()
+    if config_path.expanduser().resolve() == CONFIG_FILE.expanduser().resolve():
+        ensure_config_dir()
     if not config_path.exists():
         default_cfg = SlothConfig()
         save_config(default_cfg, config_path)

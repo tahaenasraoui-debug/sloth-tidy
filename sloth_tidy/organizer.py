@@ -1,8 +1,10 @@
-from datetime import datetime, timezone
-from pathlib import Path
+from __future__ import annotations
+
 import shutil
-from typing import List, Optional, Tuple
+import threading
 import uuid
+from datetime import UTC, datetime
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
@@ -18,7 +20,7 @@ class HistoryEntry(BaseModel):
 
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:10])
     timestamp: str = Field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
     original_path: str
     destination_path: str
@@ -44,9 +46,20 @@ def split_stem_and_suffix(filename: str) -> tuple[str, str]:
     return (p.stem or "file"), p.suffix
 
 
-def resolve_collision(target_path: Path) -> Path:
-    """Never overwrite existing files. Append `-1`, `-2`, etc. if a path already exists."""
-    if not target_path.exists():
+def resolve_collision(
+    target_path: Path, reserved_paths: set[Path] | None = None
+) -> Path:
+    """Never overwrite existing files. Append `-1`, `-2`, etc. if a path already exists or is reserved."""
+    reserved = reserved_paths or set()
+
+    def is_taken(candidate: Path) -> bool:
+        if candidate.exists():
+            return True
+        if not reserved:
+            return False
+        return candidate in reserved or candidate.resolve() in reserved
+
+    if not is_taken(target_path):
         return target_path
 
     parent = target_path.parent
@@ -55,7 +68,7 @@ def resolve_collision(target_path: Path) -> Path:
     counter = 1
     while True:
         candidate = parent / f"{stem}-{counter}{suffix}"
-        if not candidate.exists():
+        if not is_taken(candidate):
             return candidate
         counter += 1
 
@@ -86,19 +99,24 @@ def is_ignored_file(file_path: Path, config: SlothConfig) -> bool:
     return False
 
 
+def _is_default_history_path(history_path: Path) -> bool:
+    return history_path.expanduser().resolve() == HISTORY_FILE.expanduser().resolve()
+
+
 def append_history(entry: HistoryEntry, history_path: Path = HISTORY_FILE) -> None:
     """Append a single operation record to the JSONL audit history."""
-    ensure_config_dir()
+    if _is_default_history_path(history_path):
+        ensure_config_dir()
     history_path.parent.mkdir(parents=True, exist_ok=True)
     with history_path.open("a", encoding="utf-8") as f:
         f.write(entry.model_dump_json() + "\n")
 
 
-def read_history(history_path: Path = HISTORY_FILE) -> List[HistoryEntry]:
+def read_history(history_path: Path = HISTORY_FILE) -> list[HistoryEntry]:
     """Read all history records from the JSONL audit log."""
     if not history_path.exists():
         return []
-    entries: List[HistoryEntry] = []
+    entries: list[HistoryEntry] = []
     with history_path.open("r", encoding="utf-8") as f:
         for line in f:
             stripped = line.strip()
@@ -112,10 +130,12 @@ def read_history(history_path: Path = HISTORY_FILE) -> List[HistoryEntry]:
 
 
 def write_history(
-    entries: List[HistoryEntry], history_path: Path = HISTORY_FILE
+    entries: list[HistoryEntry], history_path: Path = HISTORY_FILE
 ) -> None:
     """Atomically rewrite the history JSONL file after undo updates."""
-    ensure_config_dir()
+    if _is_default_history_path(history_path):
+        ensure_config_dir()
+    history_path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = history_path.with_suffix(".jsonl.tmp")
     with temp_path.open("w", encoding="utf-8") as f:
         for entry in entries:
@@ -129,16 +149,25 @@ class SlothOrganizer:
     def __init__(
         self,
         config: SlothConfig,
-        llm_client: Optional[LocalLLMClient] = None,
+        llm_client: LocalLLMClient | None = None,
         history_path: Path = HISTORY_FILE,
     ) -> None:
         self.config = config
         self.llm = llm_client or LocalLLMClient(config)
         self.history_path = history_path
+        self._simulated_destinations: set[Path] = set()
+        self._dry_run_lock = threading.Lock()
+
+    def reset_simulated_destinations(self) -> None:
+        """Clear simulated dry-run destination paths tracked for collision previewing."""
+        with self._dry_run_lock:
+            self._simulated_destinations.clear()
 
     def compute_destination_parts(
-        self, classification: FileClassification
-    ) -> Tuple[str, str, Path]:
+        self,
+        classification: FileClassification,
+        reserved_paths: set[Path] | None = None,
+    ) -> tuple[str, str, Path]:
         """Compute category, subfolder, and collision-safe destination path."""
         if classification.confidence < self.config.confidence_threshold:
             category_dir = CategoryEnum.MISC.value
@@ -153,7 +182,11 @@ class SlothOrganizer:
             / subfolder_dir
             / classification.suggested_filename
         )
-        return category_dir, subfolder_dir, resolve_collision(raw_dest)
+        return (
+            category_dir,
+            subfolder_dir,
+            resolve_collision(raw_dest, reserved_paths=reserved_paths),
+        )
 
     def compute_destination(self, classification: FileClassification) -> Path:
         """Backward-compatible helper returning only the resolved path."""
@@ -162,7 +195,7 @@ class SlothOrganizer:
 
     def organize_file(
         self, file_path: Path, dry_run: bool = False
-    ) -> Optional[HistoryEntry]:
+    ) -> HistoryEntry | None:
         """Extract context, classify via local LLM, and safely move the file."""
         is_dry_run = bool(dry_run)
         file_path = file_path.expanduser().resolve()
@@ -171,7 +204,16 @@ class SlothOrganizer:
 
         context = extract_file_context(file_path, self.config)
         classification = self.llm.classify(context)
-        category, subfolder, destination = self.compute_destination_parts(classification)
+
+        if is_dry_run:
+            with self._dry_run_lock:
+                category, subfolder, destination = self.compute_destination_parts(
+                    classification,
+                    reserved_paths=self._simulated_destinations,
+                )
+                self._simulated_destinations.add(destination.resolve())
+        else:
+            category, subfolder, destination = self.compute_destination_parts(classification)
 
         entry = HistoryEntry(
             original_path=str(file_path),
@@ -195,7 +237,7 @@ class SlothOrganizer:
 
         return entry
 
-    def undo(self, count: int = 1) -> List[HistoryEntry]:
+    def undo(self, count: int = 1) -> list[HistoryEntry]:
         """Restore the last N organized files back to their original paths."""
         if count <= 0:
             return []
@@ -208,7 +250,7 @@ class SlothOrganizer:
         ]
 
         target_indices = list(reversed(active_indices))[:count]
-        restored: List[HistoryEntry] = []
+        restored: list[HistoryEntry] = []
 
         for idx in target_indices:
             entry = entries[idx]

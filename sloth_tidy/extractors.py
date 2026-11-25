@@ -3,9 +3,8 @@ from __future__ import annotations
 import base64
 import io
 import mimetypes
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 from PIL import ExifTags, Image
 from pydantic import BaseModel
@@ -43,7 +42,7 @@ class ExtractedContext(BaseModel):
     extractor_used: str
     content_snippet: str
     metadata_summary: str
-    base64_image: Optional[str] = None
+    base64_image: str | None = None
 
 
 def _clean_whitespace(text: str, max_chars: int) -> str:
@@ -115,11 +114,11 @@ def extract_image(
     enable_ocr: bool = True,
     enable_vision: bool = False,
     max_bytes: int = 2048,
-) -> tuple[str, str, Optional[str]]:
+) -> tuple[str, str, str | None]:
     """Extract image dimensions, EXIF tags, optional Tesseract OCR, and optional base64 thumbnail."""
     meta_parts: list[str] = []
     ocr_text = ""
-    b64_thumb: Optional[str] = None
+    b64_thumb: str | None = None
 
     try:
         with Image.open(file_path) as img:
@@ -201,13 +200,13 @@ def extract_file_context(file_path: Path, config: SlothConfig) -> ExtractedConte
     """Route a file through the appropriate content extraction pipeline."""
     stat = file_path.stat()
     ext = file_path.suffix.lower()
-    modified_dt = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+    modified_dt = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
     modified_iso = modified_dt.strftime("%Y-%m-%d")
 
     guessed_mime, _ = mimetypes.guess_type(file_path.name)
     mime_type = guessed_mime or "application/octet-stream"
 
-    base64_img: Optional[str] = None
+    base64_img: str | None = None
 
     if ext == ".pdf":
         extractor_used = "pdf"

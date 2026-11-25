@@ -3,9 +3,8 @@ from __future__ import annotations
 import json
 import re
 import time
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
-from typing import Optional
 
 import httpx
 from pydantic import BaseModel, Field, field_validator
@@ -14,7 +13,7 @@ from sloth_tidy.config import SlothConfig
 from sloth_tidy.extractors import ExtractedContext
 
 
-class CategoryEnum(str, Enum):
+class CategoryEnum(StrEnum):
     FINANCE = "Finance"
     ACADEMIC = "Academic"
     DEVELOPMENT = "Development"
@@ -206,7 +205,7 @@ class LocalLLMClient:
             return cleaned[start : end + 1]
         return cleaned
 
-    def _call_ollama(self, context: ExtractedContext) -> Optional[FileClassification]:
+    def _call_ollama(self, context: ExtractedContext) -> FileClassification | None:
         """Call local Ollama `/api/chat` with structured JSON schema enforcement and retry logic."""
         url = f"{self.config.ollama_endpoint.rstrip('/')}/api/chat"
         use_vision = (
@@ -257,7 +256,7 @@ class LocalLLMClient:
                     return None
         return None
 
-    def _call_llama_cpp(self, context: ExtractedContext) -> Optional[FileClassification]:
+    def _call_llama_cpp(self, context: ExtractedContext) -> FileClassification | None:
         """Fallback inference using direct `llama-cpp-python` bindings if configured."""
         if not self.config.gguf_fallback_path or not self.config.gguf_fallback_path.exists():
             return None

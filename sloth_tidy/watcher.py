@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import errno
 import os
 import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Callable, Optional, Set
 
 from watchdog.events import FileMovedEvent, FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
@@ -19,25 +20,31 @@ def _is_file_locked(file_path: Path) -> bool:
     if not file_path.exists():
         return True
 
-    # Try opening in read/append binary mode without truncating
+    try:
+        import fcntl
+    except ImportError:
+        fcntl = None
+
+    # Try opening in read/write binary mode without truncating
     try:
         with file_path.open("rb+") as f:
-            try:
-                import fcntl
-
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-            except (ImportError, OSError):
-                # If fcntl is unavailable or lock is contended
-                pass
+            if fcntl is not None:
+                try:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return True
+                except OSError as exc:
+                    if exc.errno in (errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK):
+                        return True
+                else:
+                    try:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                    except OSError:
+                        pass
     except OSError:
         return True
 
-    # On Linux, check /proc/self/fd or external writers if accessible
-    if not os.access(file_path, os.R_OK | os.W_OK):
-        return True
-
-    return False
+    return not os.access(file_path, os.R_OK | os.W_OK)
 
 
 def wait_until_file_ready(
@@ -52,6 +59,7 @@ def wait_until_file_ready(
     deadline = time.monotonic() + max_wait_seconds
     previous_size = -1
     stable_checks = 0
+    poll_interval = max(0.001, debounce_seconds / 2.0)
 
     while time.monotonic() < deadline:
         if not file_path.exists():
@@ -62,7 +70,7 @@ def wait_until_file_ready(
         except OSError:
             return False
 
-        if current_size > 0 and current_size == previous_size and not _is_file_locked(file_path):
+        if current_size >= 0 and current_size == previous_size and not _is_file_locked(file_path):
             stable_checks += 1
             if stable_checks >= 2:
                 return True
@@ -70,7 +78,10 @@ def wait_until_file_ready(
             stable_checks = 0
 
         previous_size = current_size
-        time.sleep(debounce_seconds / 2.0)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(poll_interval, remaining))
 
     return False
 
@@ -82,8 +93,8 @@ class SlothEventHandler(FileSystemEventHandler):
         self,
         organizer: SlothOrganizer,
         dry_run: bool = False,
-        on_organized_callback: Optional[Callable[[HistoryEntry], None]] = None,
-        on_error_callback: Optional[Callable[[Path, Exception], None]] = None,
+        on_organized_callback: Callable[[HistoryEntry], None] | None = None,
+        on_error_callback: Callable[[Path, Exception], None] | None = None,
     ) -> None:
         super().__init__()
         self.organizer = organizer
@@ -92,7 +103,7 @@ class SlothEventHandler(FileSystemEventHandler):
         self.on_organized_callback = on_organized_callback
         self.on_error_callback = on_error_callback
 
-        self._in_flight: Set[Path] = set()
+        self._in_flight: set[Path] = set()
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor(
             max_workers=2, thread_name_prefix="sloth-worker"
@@ -150,8 +161,8 @@ class SlothDaemon:
         self,
         organizer: SlothOrganizer,
         dry_run: bool = False,
-        on_organized_callback: Optional[Callable[[HistoryEntry], None]] = None,
-        on_error_callback: Optional[Callable[[Path, Exception], None]] = None,
+        on_organized_callback: Callable[[HistoryEntry], None] | None = None,
+        on_error_callback: Callable[[Path, Exception], None] | None = None,
     ) -> None:
         self.organizer = organizer
         self.handler = SlothEventHandler(
@@ -162,8 +173,8 @@ class SlothDaemon:
         )
         self.observer = Observer()
 
-    def start(self) -> List[Path]:
-        active_dirs: List[Path] = []
+    def start(self) -> list[Path]:
+        active_dirs: list[Path] = []
         for watch_dir in self.organizer.config.watch_dirs:
             if watch_dir.exists() and watch_dir.is_dir():
                 self.observer.schedule(self.handler, str(watch_dir), recursive=False)

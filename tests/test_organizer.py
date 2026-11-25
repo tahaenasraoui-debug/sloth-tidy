@@ -4,7 +4,10 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from typer.testing import CliRunner
 
+from sloth_tidy import cli
+from sloth_tidy import organizer as organizer_mod
 from sloth_tidy.config import SlothConfig
 from sloth_tidy.extractors import extract_file_context
 from sloth_tidy.llm import (
@@ -14,9 +17,12 @@ from sloth_tidy.llm import (
     ensure_filename_contract,
 )
 from sloth_tidy.organizer import (
+    HistoryEntry,
     SlothOrganizer,
+    append_history,
     read_history,
     resolve_collision,
+    write_history,
 )
 
 
@@ -80,7 +86,7 @@ def test_collision_resolution_standard_and_compound(tmp_path: Path):
 
 def test_dry_run_does_not_move_or_log_history(temp_env):
     """Verify --dry-run leaves source file untouched and does not mutate history.jsonl."""
-    config, watch_dir, target_dir, history_file = temp_env
+    config, watch_dir, _target_dir, history_file = temp_env
     sample_file = watch_dir / "lecture_notes.md"
     sample_file.write_text("# Linear Algebra\nEigenvalues and eigenvectors summary.")
 
@@ -105,7 +111,7 @@ def test_dry_run_does_not_move_or_log_history(temp_env):
 
 def test_atomic_move_collision_and_undo_lifecycle(temp_env):
     """Test full live organization, collision numbering on duplicate drops, and undo rollback."""
-    config, watch_dir, target_dir, history_file = temp_env
+    config, watch_dir, _target_dir, history_file = temp_env
 
     file_a = watch_dir / "receipt_1.txt"
     file_a.write_text("Total paid: 450 MAD")
@@ -162,3 +168,169 @@ def test_filename_contract_enforces_date_and_extension(temp_env):
     fixed = ensure_filename_contract(raw_classification, context)
     assert fixed.suggested_filename.startswith(context.modified_iso)
     assert fixed.suggested_filename.endswith(".sh")
+
+
+def test_custom_history_path_skips_ensure_config_dir(temp_env, tmp_path: Path, monkeypatch):
+    """Ensure ensure_config_dir is only invoked when using the default HISTORY_FILE."""
+    config, watch_dir, _, _ = temp_env
+    custom_history = tmp_path / "nested" / "custom-history.jsonl"
+
+    ensure_calls: list[bool] = []
+    monkeypatch.setattr(organizer_mod, "ensure_config_dir", lambda: ensure_calls.append(True))
+
+    sample = watch_dir / "note.txt"
+    sample.write_text("hello world")
+
+    mock_llm = MagicMock(spec=LocalLLMClient)
+    mock_llm.classify.return_value = FileClassification(
+        category=CategoryEnum.MISC,
+        suggested_filename="2026-10-19-note.txt",
+        subfolder="Notes",
+        confidence=0.90,
+        summary="Simple note.",
+    )
+
+    organizer = SlothOrganizer(config, llm_client=mock_llm, history_path=custom_history)
+    entry = organizer.organize_file(sample, dry_run=False)
+    assert entry is not None
+    assert ensure_calls == []
+    assert custom_history.exists()
+
+    # Undo also uses write_history with custom_history and must not call ensure_config_dir
+    restored = organizer.undo(count=1)
+    assert len(restored) == 1
+    assert ensure_calls == []
+
+    # Direct append_history / write_history with default HISTORY_FILE does call ensure_config_dir
+    default_history = tmp_path / "default-sim" / "history.jsonl"
+    monkeypatch.setattr(organizer_mod, "HISTORY_FILE", default_history)
+    dummy_entry = HistoryEntry(
+        original_path=str(sample),
+        destination_path=entry.destination_path,
+        category="Misc",
+        subfolder="Notes",
+        confidence=0.9,
+        summary="Simple note.",
+        size_bytes=11,
+    )
+    append_history(dummy_entry, default_history)
+    write_history([dummy_entry], default_history)
+    assert len(ensure_calls) == 2
+
+
+def test_dry_run_collision_tracking_assigns_distinct_destinations(temp_env):
+    """Simulate duplicate targets in dry-run mode without touching disk."""
+    config, watch_dir, target_dir, history_file = temp_env
+
+    files = []
+    for idx in range(3):
+        f = watch_dir / f"dup_{idx}.pdf"
+        f.write_text(f"invoice {idx}")
+        files.append(f)
+
+    mock_llm = MagicMock(spec=LocalLLMClient)
+    mock_llm.classify.return_value = FileClassification(
+        category=CategoryEnum.FINANCE,
+        suggested_filename="2026-10-19-electric-bill.pdf",
+        subfolder="Bills",
+        confidence=0.91,
+        summary="Utility bill.",
+    )
+
+    organizer = SlothOrganizer(config, llm_client=mock_llm, history_path=history_file)
+    entries = [organizer.organize_file(f, dry_run=True) for f in files]
+
+    assert all(e is not None for e in entries)
+    resolved_names = [Path(e.destination_path).name for e in entries if e is not None]
+    assert resolved_names == [
+        "2026-10-19-electric-bill.pdf",
+        "2026-10-19-electric-bill-1.pdf",
+        "2026-10-19-electric-bill-2.pdf",
+    ]
+    assert all(f.exists() for f in files)
+    assert not (target_dir / "Finance").exists()
+    assert read_history(history_file) == []
+
+    # Resetting simulated state and creating an actual on-disk file shifts dry-run to -1
+    organizer.reset_simulated_destinations()
+    existing_dest = target_dir / "Finance" / "Bills" / "2026-10-19-electric-bill.pdf"
+    existing_dest.parent.mkdir(parents=True, exist_ok=True)
+    existing_dest.write_text("already organized")
+
+    next_entry = organizer.organize_file(files[0], dry_run=True)
+    assert next_entry is not None
+    assert Path(next_entry.destination_path).name == "2026-10-19-electric-bill-1.pdf"
+
+
+def test_low_confidence_routes_to_review_folder(temp_env):
+    """Files below confidence_threshold are routed to Misc/Low_Confidence_Review."""
+    config, watch_dir, target_dir, history_file = temp_env
+    mystery = watch_dir / "mystery.txt"
+    mystery.write_text("ambiguous content")
+
+    mock_llm = MagicMock(spec=LocalLLMClient)
+    mock_llm.classify.return_value = FileClassification(
+        category=CategoryEnum.FINANCE,
+        suggested_filename="2026-10-19-mystery.txt",
+        subfolder="Invoices",
+        confidence=0.30,
+        summary="Uncertain item.",
+    )
+
+    organizer = SlothOrganizer(config, llm_client=mock_llm, history_path=history_file)
+    entry = organizer.organize_file(mystery, dry_run=True)
+    assert entry is not None
+    assert entry.category == "Misc"
+    assert entry.subfolder == "Low_Confidence_Review"
+    assert Path(entry.destination_path) == (
+        target_dir / "Misc" / "Low_Confidence_Review" / "2026-10-19-mystery.txt"
+    )
+
+
+def test_cli_scan_dry_run_collision_and_clean_daemon_banner(temp_env, monkeypatch):
+    """Verify CLI scan --dry-run displays distinct destinations and daemon banner is clean."""
+    config, watch_dir, _target_dir, _ = temp_env
+    (watch_dir / "a_receipt.txt").write_text("Receipt A")
+    (watch_dir / "b_receipt.txt").write_text("Receipt B")
+
+    monkeypatch.setattr(cli, "load_config", lambda: config)
+    monkeypatch.setattr(
+        LocalLLMClient,
+        "classify",
+        lambda self, ctx: FileClassification(
+            category=CategoryEnum.FINANCE,
+            suggested_filename="2026-10-19-receipt.txt",
+            subfolder="Receipts",
+            confidence=0.90,
+            summary="Receipt.",
+        ),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["scan", str(watch_dir), "--dry-run"])
+    assert result.exit_code == 0
+    assert "DRY-RUN" in result.stdout
+    assert "2026-10-19-receipt.txt" in result.stdout
+    assert "2026-10-19-receipt-1.txt" in result.stdout
+    assert (watch_dir / "a_receipt.txt").exists()
+    assert (watch_dir / "b_receipt.txt").exists()
+
+    # Check run banner cleanly stops on KeyboardInterrupt without hardcoded personal text
+    class DummyDaemon:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            return [watch_dir]
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(cli, "SlothDaemon", DummyDaemon)
+    monkeypatch.setattr(cli.time, "sleep", MagicMock(side_effect=KeyboardInterrupt))
+
+    run_result = runner.invoke(cli.app, ["run", "--dry-run"])
+    assert run_result.exit_code == 0
+    assert "SlothTidy Daemon Active" in run_result.stdout
+    assert "Abass" not in run_result.stdout
+    assert "Bobbys" not in run_result.stdout

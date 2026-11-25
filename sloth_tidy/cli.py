@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 from collections import Counter
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich import box
@@ -69,7 +68,7 @@ def run(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Simulate categorization without moving any files."
     ),
-    model: Optional[str] = typer.Option(
+    model: str | None = typer.Option(
         None, "--model", "-m", help="Override the local Ollama model name."
     ),
 ) -> None:
@@ -95,7 +94,7 @@ def run(
 
     banner = (
         f"[bold green]{SLOTH_ASCII}[/bold green]\n"
-        f"[bold]SlothTidy Daemon Active[/bold] — conserving your energy, Abass le roi des Bobbys.\n\n"
+        f"[bold]SlothTidy Daemon Active[/bold] — slow, steady, 100% local file organization.\n\n"
         f"[cyan]Inference Endpoint:[/cyan] {config.ollama_endpoint} ([bold]{config.model_name}[/bold])\n"
         f"[cyan]Target Root:[/cyan]        {config.target_root}\n"
         f"[cyan]Mode:[/cyan]               {'DRY-RUN (no files moved)' if dry_run else 'LIVE ATOMIC MOVES'}\n"
@@ -129,7 +128,7 @@ def scan(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Preview organization without moving files."
     ),
-    model: Optional[str] = typer.Option(
+    model: str | None = typer.Option(
         None, "--model", "-m", help="Override the local Ollama model name."
     ),
 ) -> None:
@@ -142,7 +141,7 @@ def scan(
     target_dir = directory.expanduser().resolve()
 
     iterator = target_dir.rglob("*") if recursive else target_dir.glob("*")
-    candidates = [p for p in iterator if not is_ignored_file(p, config)]
+    candidates = sorted(p for p in iterator if not is_ignored_file(p, config))
 
     if not candidates:
         console.print(f"[yellow]Nothing to tidy in {target_dir}. Time for a nap![/yellow]")
@@ -171,7 +170,7 @@ def scan(
     )
     table.add_column("Original File", style="cyan")
     table.add_column("Category / Subfolder", style="magenta")
-    table.add_column("New Filename", style="green")
+    table.add_column("New Filename", style="green", no_wrap=True)
     table.add_column("Conf.", justify="right")
     table.add_column("Summary", style="dim")
 
@@ -257,7 +256,6 @@ def report() -> None:
     # Assume each manual file inspection, folder creation, and rename takes ~25 seconds
     seconds_saved = total_files * 25
     minutes_saved = seconds_saved / 60.0
-    leaves_munched = max(1, int(total_files * 1.8))
     cloud_cost_saved = total_files * 0.004  # Estimated cloud vision/LLM API cost avoided
 
     cat_counts = Counter(e.category for e in entries)

@@ -19,13 +19,13 @@
 **Zero-friction, privacy-first local AI file organization daemon.**  
 *Built for the Hacktoberfest 2026 "Slow and Steady" Challenge.*
 
+[![CI](https://github.com/tahaenasraoui-debug/sloth-tidy/actions/workflows/ci.yml/badge.svg)](https://github.com/tahaenasraoui-debug/sloth-tidy/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Ollama](https://img.shields.io/badge/AI-Ollama%20%7C%20llama.cpp-000000?logo=ollama&logoColor=white)](https://ollama.com/)
 [![Pydantic v2](https://img.shields.io/badge/Pydantic-v2-E92063?logo=pydantic&logoColor=white)](https://docs.pydantic.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-2ea44f.svg)](LICENSE)
 [![Hacktoberfest 2026](https://img.shields.io/badge/Hacktoberfest-2026-FF7518)](https://hacktoberfest.com/)
 
-</div>
 </div>
 
 ---
@@ -233,9 +233,10 @@ ignored_prefixes = [".", "~$", "__"]
 
 ## Running Tests
 
-The test suite covers Pydantic JSON schema sanitization (including path-traversal prevention), compound extension collision resolution (`.tar.gz`), `--dry-run` isolation, and multi-step `undo` rollbacks:
+The test suite covers configuration validation, multi-format content extraction, local LLM inference and heuristic fallbacks, file-lock/readiness watching, dry-run collision tracking, and multi-step `undo` rollbacks:
 
 ```bash
+ruff check .
 pytest -v
 ```
 
@@ -245,13 +246,15 @@ pytest -v
 
 ```text
 sloth-tidy/
-├── pyproject.toml           # Build configuration and pinned dependencies
+├── .github/
+│   └── workflows/
+│       └── ci.yml           # GitHub Actions CI workflow (ruff + pytest)
+├── LICENSE                  # MIT License
+├── pyproject.toml           # Build configuration, Ruff rules, and dependencies
 ├── README.md                # Project documentation
-├── DEV_POST.md              # Hacktoberfest 2026 "Slow and Steady" article & benchmarks
 ├── assets/
 │   └── image.png            # Terminal UI preview image (scan + report card)
 ├── sloth_tidy/
-│   ├── __init__.py          # Package version metadata
 │   ├── config.py            # TOML configuration loader & Pydantic settings validation
 │   ├── extractors.py        # PDF, text, EXIF/OCR image, and binary magic-byte extractors
 │   ├── llm.py               # Ollama client, llama.cpp fallback, and JSON schema contract
@@ -259,7 +262,11 @@ sloth-tidy/
 │   ├── watcher.py           # Debounced Watchdog daemon & POSIX file-lock checks
 │   └── cli.py               # Typer + Rich CLI commands (run, scan, history, undo, report)
 └── tests/
-    └── test_organizer.py    # Automated pytest suite
+    ├── test_config.py       # Configuration loading, path expansion, and warning checks
+    ├── test_extractors.py   # PDF, image/OCR/vision, text, and binary extractor tests
+    ├── test_llm.py          # Ollama/llama.cpp mocked inference and fallback heuristics
+    ├── test_organizer.py    # Schema sanitization, collisions, dry-run tracking, and undo
+    └── test_watcher.py      # POSIX flock detection, 0-byte readiness, and event dispatch
 ```
 
 ---
